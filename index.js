@@ -40,6 +40,16 @@ float sdSphere(vec3 p, float s) {
   return length(p) - s;
 }
 
+float sdHexPrism(vec3 p, vec2 h) {
+  const vec3 k = vec3(-0.8660254, 0.5, 0.57735);
+  p = abs(p);
+  p.xy -= 2.0*min(dot(k.xy, p.xy), 0.0)*k.xy;
+  vec2 d = vec2(
+       length(p.xy-vec2(clamp(p.x,-k.z*h.x,k.z*h.x), h.x))*sign(p.y-h.x),
+       p.z-h.y );
+  return min(max(d.x,d.y),0.0) + length(max(d,0.0));
+}
+
 vec2 opU(vec2 d1, vec2 d2) {
   if (d1.x <= d2.x) return d1;
   return d2;
@@ -49,6 +59,7 @@ const float SUPPORT_DEPTH = 0.03;
 
 const float MAT_COPPER = 1.0;
 const float MAT_METAL = 2.0;
+const float MAT_GOLD = 3.0;
 
 float supportHoles(in vec3 p) {
   mat4 l = translate(vec3(-0.25, 0, 0));
@@ -84,10 +95,13 @@ vec2 chipSupport(in vec3 p) {
 vec2 chipPlate(in vec3 p) {
   const float oz = -(SUPPORT_DEPTH/2.0 + SUPPORT_DEPTH/4.0);
   mat4 f = translate(vec3(0, 0, oz));
-  return vec2(sdBox(
-    (inverse(f) * vec4(p, 1.0)).xyz,
-    vec3(0.125, 0.3, SUPPORT_DEPTH/2.0)
-  ), MAT_COPPER);
+  return vec2(
+    sdBox(
+      (inverse(f) * vec4(p, 1.0)).xyz,
+      vec3(0.125, 0.3, SUPPORT_DEPTH/2.0)
+    ),
+    MAT_COPPER
+  );
 }
 
 vec2 wirePlates(in vec3 p) {
@@ -106,11 +120,39 @@ vec2 wirePlates(in vec3 p) {
   ), MAT_METAL);
 }
 
+float honeyCombRows(vec3 p) {
+  vec3 c = vec3(0.08, -0.042, 0);
+  vec3 r = vec3(2, 3, 2);
+  vec3 q = p-c*clamp(round(p/c),vec3(0),r);
+  return sdHexPrism(q, vec2(0.02, SUPPORT_DEPTH/2.0));
+}
+
+float honeyComb(vec3 p) {
+  mat4 even = translate(vec3(0.04, -0.02, 0.0));
+  return min(
+    honeyCombRows(p),
+    honeyCombRows((inverse(even) * vec4(p, 1.0)).xyz)
+  );
+}
+
+vec2 wireConnectors(vec3 p) {
+  const float oz = -3.0*SUPPORT_DEPTH;
+  mat4 t = translate(vec3(-0.1,  0.26, oz));
+  mat4 b = translate(vec3(-0.1, -0.11, oz));
+  return vec2(min(
+    honeyComb((inverse(t) * vec4(p, 1.0)).xyz),
+    honeyComb((inverse(b) * vec4(p, 1.0)).xyz)
+  ), MAT_GOLD);
+}
+
 vec2 map(in vec3 p) {
   return opU(
     chipSupport(p),
     opU(
-      chipPlate(p),
+      opU(
+        chipPlate(p),
+        wireConnectors(p)
+      ),
       wirePlates(p)
     )
   );
@@ -137,6 +179,7 @@ vec4 light(vec3 p, float matId) {
   vec3 color = vec3(1, 0, 1);
   if (matId == MAT_COPPER) { color = vec3(0.7, 0.2, 0); }
   else if (matId == MAT_METAL) { color = vec3(0.5, 0.5, 0.5); }
+  else if (matId == MAT_GOLD) { color = vec3(0.8, 0.7, 0); }
   return vec4(color * diffuse, 1);
 }
 
