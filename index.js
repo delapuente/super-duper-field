@@ -40,7 +40,15 @@ float sdSphere(vec3 p, float s) {
   return length(p) - s;
 }
 
-const float SUPPORT_p = 0.03;
+vec2 opU(vec2 d1, vec2 d2) {
+  if (d1.x <= d2.x) return d1;
+  return d2;
+}
+
+const float SUPPORT_DEPTH = 0.03;
+
+const float MAT_COPPER = 1.0;
+const float MAT_METAL = 2.0;
 
 float supportHoles(in vec3 p) {
   mat4 l = translate(vec3(-0.25, 0, 0));
@@ -48,12 +56,12 @@ float supportHoles(in vec3 p) {
   return min(
     sdRoundBox(
       (inverse(l) * vec4(p, 1)).xyz,
-      vec3(0.10, 0.04, SUPPORT_p),
+      vec3(0.10, 0.04, SUPPORT_DEPTH),
       0.02
     ),
     sdRoundBox(
       (inverse(r) * vec4(p, 1.0)).xyz,
-      vec3(0.10, 0.04, SUPPORT_p),
+      vec3(0.10, 0.04, SUPPORT_DEPTH),
       0.02
     )
   );
@@ -62,46 +70,46 @@ float supportHoles(in vec3 p) {
 float supportMain(in vec3 p) {
   return sdBox(
     p,
-    vec3(0.25, 0.3, SUPPORT_p)
+    vec3(0.25, 0.3, SUPPORT_DEPTH)
   );
 }
 
-float chipSupport(in vec3 p) {
-  return max(
+vec2 chipSupport(in vec3 p) {
+  return vec2(max(
      supportMain(p),
     -supportHoles(p)
-  );
+  ), MAT_COPPER);
 }
 
-float chipPlate(in vec3 p) {
-  const float oz = -(SUPPORT_p/2.0 + SUPPORT_p/4.0);
+vec2 chipPlate(in vec3 p) {
+  const float oz = -(SUPPORT_DEPTH/2.0 + SUPPORT_DEPTH/4.0);
   mat4 f = translate(vec3(0, 0, oz));
-  return sdBox(
+  return vec2(sdBox(
     (inverse(f) * vec4(p, 1.0)).xyz,
-    vec3(0.125, 0.3, SUPPORT_p/2.0)
-  );
+    vec3(0.125, 0.3, SUPPORT_DEPTH/2.0)
+  ), MAT_COPPER);
 }
 
-float wirePlates(in vec3 p) {
-  const float oz = -SUPPORT_p;
+vec2 wirePlates(in vec3 p) {
+  const float oz = -SUPPORT_DEPTH;
   mat4 t = translate(vec3(0,  0.19, oz));
   mat4 b = translate(vec3(0, -0.19, oz));
-  return min(
+  return vec2(min(
     sdBox(
       (inverse(t) * vec4(p, 1.0)).xyz,
-      vec3(0.25, 0.11, SUPPORT_p)
+      vec3(0.25, 0.11, SUPPORT_DEPTH)
     ),
     sdBox(
       (inverse(b) * vec4(p, 1.0)).xyz,
-      vec3(0.25, 0.11, SUPPORT_p)
+      vec3(0.25, 0.11, SUPPORT_DEPTH)
     )
-  );
+  ), MAT_METAL);
 }
 
-float map(in vec3 p) {
-  return min(
+vec2 map(in vec3 p) {
+  return opU(
     chipSupport(p),
-    min(
+    opU(
       chipPlate(p),
       wirePlates(p)
     )
@@ -110,9 +118,9 @@ float map(in vec3 p) {
 
 vec3 normal(in vec3 p) {
   const vec3 epsilon = vec3(0.001, 0.0, 0.0);
-  float gradient_x = map(p.xyz + epsilon.xyy) - map(p.xyz - epsilon.xyy);
-  float gradient_y = map(p.xyz + epsilon.yxy) - map(p.xyz - epsilon.yxy);
-  float gradient_z = map(p.xyz + epsilon.yyx) - map(p.xyz - epsilon.yyx);
+  float gradient_x = map(p.xyz + epsilon.xyy).x - map(p.xyz - epsilon.xyy).x;
+  float gradient_y = map(p.xyz + epsilon.yxy).x - map(p.xyz - epsilon.yxy).x;
+  float gradient_z = map(p.xyz + epsilon.yyx).x - map(p.xyz - epsilon.yyx).x;
   vec3 gradient = vec3(gradient_x, gradient_y, gradient_z);
   return normalize(gradient);
 }
@@ -121,11 +129,14 @@ const int MAX_STEPS = 256;
 const float HIT_THRESHOLD = 0.0001;
 const float MAX_DISTANCE = 500.0;
 
-vec4 light(in vec3 p, in vec3 color) {
+vec4 light(vec3 p, float matId) {
   vec3 n = normal(p);
   vec3 lightPos = vec3(2.0, -5.0, 3.0);
   vec3 lightRay = normalize(p - lightPos);
   float diffuse = max(0.0, dot(n, lightRay));
+  vec3 color = vec3(1, 0, 1);
+  if (matId == MAT_COPPER) { color = vec3(0.7, 0.2, 0); }
+  else if (matId == MAT_METAL) { color = vec3(0.5, 0.5, 0.5); }
   return vec4(color * diffuse, 1);
 }
 
@@ -133,9 +144,11 @@ vec4 intersect(in vec3 ro, in vec3 rd) {
   float traveled = 0.0;
   for (int i = 0; i < MAX_STEPS; ++i) {
     vec3 p = ro + rd * traveled;
-    float distance = map(p);
+    vec2 result = map(p);
+    float distance = result.x;
+    float matId = result.y;
     if (distance < HIT_THRESHOLD) {
-      return light(p, vec3(1, 0, 1));
+      return light(p, matId);
     }
     if (traveled > MAX_DISTANCE) {
       break;
