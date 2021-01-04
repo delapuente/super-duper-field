@@ -26,6 +26,35 @@ mat4 translate(in vec3 o) {
   );
 }
 
+float det(vec3 a, vec3 b, in vec3 v) {
+  return dot(v,cross(a,b));
+}
+
+vec4 sdBezier(vec3 p, vec3 b0, vec3 b1, vec3 b2) {
+  b0 -= p;
+  b1 -= p;
+  b2 -= p;
+
+  vec3  d21 = b2-b1;
+  vec3  d10 = b1-b0;
+  vec3  d20 = (b2-b0)*0.5;
+
+  vec3  n = normalize(cross(d10,d21));
+
+  float a = det(b0,b2,n);
+  float b = det(b1,b0,n);
+  float d = det(b2,b1,n);
+  vec3  g = b*d21 + d*d10 + a*d20;
+  float f = a*a*0.25-b*d;
+
+  vec3  z = cross(b0,n) + f*g/dot(g,g);
+  float t = clamp( dot(z,d10-d20)/(a+b+d), 0.0 ,1.0);
+  vec3 q = mix(mix(b0,b1,t), mix(b1,b2,t),t);
+
+  float k = dot(q,n);
+  return vec4(length(q),t,-k,-sign(f)*length(q-n*k));
+}
+
 float sdBox(vec3 p, vec3 b) {
   vec3 q = abs(p.xyz) - b;
   return length(max(q, 0.0)) + min(max(q.x, max(q.y,q.z)), 0.0);
@@ -145,15 +174,66 @@ vec2 wireConnectors(vec3 p) {
   ), MAT_GOLD);
 }
 
+float wireBunchRows(vec3 p, float idx) {
+  vec3 c = vec3(0.08, 0, 0);
+  vec3 r = vec3(2, 1, 1);
+  vec3 q = p-c*clamp(round(p/c),vec3(0),r);
+  return sdBezier(
+    q,
+    vec3(0, 0, 0),
+    vec3(0, 0, -0.10*(idx+1.0)),
+    vec3(0, 1, 0)
+  ).x - 0.01;
+}
+
+float wireBunch(vec3 p) {
+  mat4 even = translate(vec3(0.04, -0.02, 0.0));
+  return min(
+    min(
+      wireBunchRows(p, 0.0),
+      wireBunchRows((inverse(even) * vec4(p, 1.0)).xyz, 0.0)
+    ),
+    min(
+      min(
+        wireBunchRows(p + vec3(0, 0.04, 0), 1.0),
+        wireBunchRows((inverse(even) * (vec4(p, 1.0) + vec4(0, 0.04, 0, 0))).xyz, 1.0)
+      ),
+      min(
+        min(
+          wireBunchRows(p + vec3(0, 0.08, 0), 2.0),
+          wireBunchRows((inverse(even) * (vec4(p, 1.0) + vec4(0, 0.08, 0, 0))).xyz, 2.0)
+        ),
+        min(
+          wireBunchRows(p + vec3(0, 0.12, 0), 3.0),
+          wireBunchRows((inverse(even) * (vec4(p, 1.0) + vec4(0, 0.12, 0, 0))).xyz, 3.0)
+        )
+      )
+    )
+  );
+}
+
+vec2 wires(vec3 p) {
+  const float oz = -3.0*SUPPORT_DEPTH;
+  mat4 t = translate(vec3(-0.1,  0.26, oz));
+  mat4 b = translate(vec3(-0.1, -0.11, oz));
+  return vec2(
+    wireBunch((inverse(t) * vec4(p, 1.0)).xyz)
+  , MAT_METAL);
+}
+
 vec2 map(in vec3 p) {
+  return opU(wires(p), wireConnectors(p));
   return opU(
     chipSupport(p),
     opU(
       opU(
-        chipPlate(p),
-        wireConnectors(p)
+        wirePlates(p),
+        opU(
+          wires(p),
+          wireConnectors(p)
+        )
       ),
-      wirePlates(p)
+      chipPlate(p)
     )
   );
 }
@@ -204,7 +284,7 @@ vec4 intersect(in vec3 ro, in vec3 rd) {
 void main() {
   vec2 uv = gl_FragCoord.xy/resolution.y * 2.0 - 1.0;
   vec4 ro = cameraMatrix * vec4(0, 0, 0, 1);
-  vec4 np = cameraMatrix * vec4(uv, 10, 1); // pos in near plane
+  vec4 np = cameraMatrix * vec4(uv, 7, 1); // pos in near plane
   vec4 rd = normalize(np - ro);
   vec4 shaded_color = intersect(ro.xyz, rd.xyz);
   outColor = shaded_color;
@@ -267,7 +347,6 @@ function main () {
   requestAnimationFrame(function _frame(t) {
     const cameraMatrix = m4.yRotation(Math.sin(t/2000))//m4.identity()
     m4.translate(cameraMatrix, 0, 0, -4, cameraMatrix)
-    console.log(cameraMatrix)
     gl.uniform1f(tLocation, t)
     gl.uniformMatrix4fv(cameraMatrixLocation, false, cameraMatrix)
     gl.uniform2fv(resolutionLocation, resolution)
