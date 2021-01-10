@@ -79,9 +79,21 @@ float sdHexPrism(vec3 p, vec2 h) {
   return min(max(d.x,d.y),0.0) + length(max(d,0.0));
 }
 
+vec2 opU(vec2 d) {
+  return d;
+}
+
 vec2 opU(vec2 d1, vec2 d2) {
   if (d1.x <= d2.x) return d1;
   return d2;
+}
+
+float opU(float d1, float d2) {
+  return min(d1, d2);
+}
+
+float opU(float d) {
+  return d;
 }
 
 const float SUPPORT_DEPTH = 0.03;
@@ -174,38 +186,39 @@ vec2 wireConnectors(vec3 p) {
   ), MAT_GOLD);
 }
 
-float wireBunchRows(vec3 p, float idx) {
+float wireBunchRows(vec3 p, float rowIndex, bool facingUp) {
   vec3 c = vec3(0.08, 0, 0);
   vec3 r = vec3(2, 1, 1);
   vec3 q = p-c*clamp(round(p/c),vec3(0),r);
+  rowIndex = facingUp ? rowIndex : 3.0 - rowIndex;
   return sdBezier(
     q,
     vec3(0, 0, 0),
-    vec3(0, 0, -0.10*(idx+1.0)),
-    vec3(0, 1, 0)
+    vec3(0, 0, -0.10*(rowIndex+1.0)),
+    vec3(0, facingUp ? 1 : -1, 0)
   ).x - 0.01;
 }
 
-float wireBunch(vec3 p) {
+float wireBunch(vec3 p, bool facingUp) {
   mat4 even = translate(vec3(0.04, -0.02, 0.0));
   return min(
-    min(
-      wireBunchRows(p, 0.0),
-      wireBunchRows((inverse(even) * vec4(p, 1.0)).xyz, 0.0)
+    opU(
+      wireBunchRows(p, 0.0, facingUp),
+      wireBunchRows((inverse(even) * vec4(p, 1.0)).xyz, 0.0, facingUp)
     ),
-    min(
-      min(
-        wireBunchRows(p + vec3(0, 0.04, 0), 1.0),
-        wireBunchRows((inverse(even) * (vec4(p, 1.0) + vec4(0, 0.04, 0, 0))).xyz, 1.0)
+    opU(
+      opU(
+        wireBunchRows(p + vec3(0, 0.04, 0), 1.0, facingUp),
+        wireBunchRows((inverse(even) * (vec4(p, 1.0) + vec4(0, 0.04, 0, 0))).xyz, 1.0, facingUp)
       ),
-      min(
-        min(
-          wireBunchRows(p + vec3(0, 0.08, 0), 2.0),
-          wireBunchRows((inverse(even) * (vec4(p, 1.0) + vec4(0, 0.08, 0, 0))).xyz, 2.0)
+      opU(
+        opU(
+          wireBunchRows(p + vec3(0, 0.08, 0), 2.0, facingUp),
+          wireBunchRows((inverse(even) * (vec4(p, 1.0) + vec4(0, 0.08, 0, 0))).xyz, 2.0, facingUp)
         ),
-        min(
-          wireBunchRows(p + vec3(0, 0.12, 0), 3.0),
-          wireBunchRows((inverse(even) * (vec4(p, 1.0) + vec4(0, 0.12, 0, 0))).xyz, 3.0)
+        opU(
+          wireBunchRows(p + vec3(0, 0.12, 0), 3.0, facingUp),
+          wireBunchRows((inverse(even) * (vec4(p, 1.0) + vec4(0, 0.12, 0, 0))).xyz, 3.0, facingUp)
         )
       )
     )
@@ -217,12 +230,14 @@ vec2 wires(vec3 p) {
   mat4 t = translate(vec3(-0.1,  0.26, oz));
   mat4 b = translate(vec3(-0.1, -0.11, oz));
   return vec2(
-    wireBunch((inverse(t) * vec4(p, 1.0)).xyz)
+  opU(
+    wireBunch((inverse(t) * vec4(p, 1.0)).xyz, true),
+    wireBunch((inverse(b) * vec4(p, 1.0)).xyz, false)
+  )
   , MAT_METAL);
 }
 
 vec2 map(in vec3 p) {
-  return opU(wires(p), wireConnectors(p));
   return opU(
     chipSupport(p),
     opU(
@@ -295,8 +310,10 @@ main ()
 
 function main () {
   // Create canvas, set resolution and get WebGL context
-  const resolution = [840, 472]
+  const resolution = [800, 400]
+  const scaleFactor = 2
   const canvas = document.createElement('canvas')
+  canvas.style.width = `${scaleFactor * resolution[0]}px`
   canvas.width = resolution[0]
   canvas.height = resolution[1]
   document.body.appendChild(canvas)
