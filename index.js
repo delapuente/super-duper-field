@@ -266,16 +266,48 @@ const int MAX_STEPS = 256;
 const float HIT_THRESHOLD = 0.0001;
 const float MAX_DISTANCE = 500.0;
 
-vec4 light(vec3 p, float matId) {
-  vec3 n = normal(p);
-  vec3 lightPos = vec3(2.0, -5.0, 3.0);
-  vec3 lightRay = normalize(p - lightPos);
-  float diffuse = max(0.0, dot(n, lightRay));
+float apprSoftShadow(vec3 ro, vec3 rd, float mint, float tmax, float w) {
+  float shadow = 1.0;
+  for (float t=mint; t<tmax; ) {
+    float h = map(ro + t*rd).x;
+    if (h < HIT_THRESHOLD) return 0.0;
+    shadow = min(shadow, w*h/t);
+    t += h;
+  }
+  return shadow;
+}
+
+float ambientOcclusion(in vec3 p, in vec3 n) {
+	float occlusion = 0.0;
+  float sca = 1.0;
+  for(int i=0; i<5; i++) {
+    float h = 0.001 + 0.15*float(i)/4.0;
+    float d = map(p + h*n).x;
+    occlusion += (h-d)*sca;
+    sca *= 0.95;
+  }
+  return clamp(1.0 - 1.5*occlusion, 0.0, 1.0);
+}
+
+vec4 light(vec3 p, vec3 rd, float matId) {
   vec3 color = vec3(1, 0, 1);
   if (matId == MAT_COPPER) { color = vec3(0.7, 0.2, 0); }
   else if (matId == MAT_METAL) { color = vec3(0.5, 0.5, 0.5); }
   else if (matId == MAT_GOLD) { color = vec3(0.8, 0.7, 0); }
-  return vec4(color * diffuse, 1);
+
+  vec3 n = normal(p);
+  vec3 lightPos = normalize(vec3(1.0, 1.5, -2.0));
+  vec3 lightRay = normalize(lightPos - rd);
+
+  float shadow = apprSoftShadow(p, lightPos, 0.01, 3.0, 32.0);
+  float diffuse = clamp(dot(n, lightPos), 0.0, 1.0) * shadow;
+  float specular = pow(clamp(dot(n, lightRay), 0.0, 1.0), 32.0);
+  float occlusion = ambientOcclusion(p, n);
+  float ambient = 0.5 + 0.5*n.y;
+
+  return vec4(color * diffuse +
+              specular * diffuse * 7.0 * vec3(0.90,0.80,1.0) +
+              color * ambient * occlusion * vec3(0.05,0.1,0.15), 1);
 }
 
 vec4 intersect(in vec3 ro, in vec3 rd) {
@@ -286,7 +318,7 @@ vec4 intersect(in vec3 ro, in vec3 rd) {
     float distance = result.x;
     float matId = result.y;
     if (distance < HIT_THRESHOLD) {
-      return light(p, matId);
+      return light(p, rd, matId);
     }
     if (traveled > MAX_DISTANCE) {
       break;
@@ -310,8 +342,8 @@ main ()
 
 function main () {
   // Create canvas, set resolution and get WebGL context
-  const resolution = [800, 400]
-  const scaleFactor = 2
+  const resolution = [1600, 800]
+  const scaleFactor = 1
   const canvas = document.createElement('canvas')
   canvas.style.width = `${scaleFactor * resolution[0]}px`
   canvas.width = resolution[0]
