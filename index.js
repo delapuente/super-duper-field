@@ -177,7 +177,7 @@ float honeyComb(vec3 p) {
 }
 
 vec2 wireConnectors(vec3 p) {
-  const float oz = -3.0*SUPPORT_DEPTH;
+  const float oz = -2.5*SUPPORT_DEPTH;
   mat4 t = translate(vec3(-0.1,  0.26, oz));
   mat4 b = translate(vec3(-0.1, -0.11, oz));
   return vec2(min(
@@ -226,7 +226,7 @@ float wireBunch(vec3 p, bool facingUp) {
 }
 
 vec2 wires(vec3 p) {
-  const float oz = -3.0*SUPPORT_DEPTH;
+  const float oz = -2.5*SUPPORT_DEPTH;
   mat4 t = translate(vec3(-0.1,  0.26, oz));
   mat4 b = translate(vec3(-0.1, -0.11, oz));
   return vec2(
@@ -305,9 +305,11 @@ vec4 light(vec3 p, vec3 rd, float matId) {
   float occlusion = ambientOcclusion(p, n);
   float ambient = 0.5 + 0.5*n.y;
 
-  return vec4(color * diffuse +
-              specular * diffuse * 7.0 * vec3(0.90,0.80,1.0) +
-              color * ambient * occlusion * vec3(0.05,0.1,0.15), 1);
+  vec3 res = color * diffuse +
+             specular * diffuse * 7.0 * vec3(0.90,0.80,1.0) +
+             color * ambient * occlusion * vec3(0.05,0.1,0.15);
+
+  return vec4(pow(res, vec3(0.4545)), 1);
 }
 
 vec4 intersect(in vec3 ro, in vec3 rd) {
